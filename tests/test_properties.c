@@ -120,10 +120,48 @@ int main(void) {
         }
     }
 
+    {
+        const size_t large_len = 1024u * 1024u;
+        unsigned char *large_input = malloc(large_len);
+        unsigned char *large_one_shot = malloc(large_len);
+        unsigned char *large_partitioned = malloc(large_len);
+        size_t one_shot_len = 0;
+        size_t partitioned_len = 0;
+
+        if (large_input == NULL || large_one_shot == NULL ||
+            large_partitioned == NULL) {
+            fprintf(stderr, "allocation failed for large-stream test\n");
+            free(large_input);
+            free(large_one_shot);
+            free(large_partitioned);
+            return 1;
+        }
+        for (size_t i = 0; i < large_len; i++) {
+            large_input[i] = (unsigned char)next_random(&random_state);
+        }
+        if (!filter_partitioned(large_input, large_len, large_one_shot,
+                                &one_shot_len, UINT32_C(1), 1) ||
+            !filter_partitioned(large_input, large_len, large_partitioned,
+                                &partitioned_len, UINT32_C(0xc001d00d), 0) ||
+            one_shot_len != partitioned_len ||
+            memcmp(large_one_shot, large_partitioned, one_shot_len) != 0 ||
+            !is_subsequence(large_input, large_len, large_one_shot,
+                            one_shot_len)) {
+            fprintf(stderr, "one-megabyte stream property failed\n");
+            free(large_input);
+            free(large_one_shot);
+            free(large_partitioned);
+            return 1;
+        }
+        free(large_input);
+        free(large_one_shot);
+        free(large_partitioned);
+    }
+
     free(input);
     free(one_shot);
     free(partitioned);
     free(twice);
-    printf("1000 deterministic adversarial streams passed\n");
+    printf("1000 deterministic adversarial streams and 1 MiB case passed\n");
     return 0;
 }
