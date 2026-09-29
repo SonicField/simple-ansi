@@ -4,7 +4,7 @@
 
 #include <string.h>
 
-#include "nbs_assert.h"
+#include "simple_assert.h"
 
 static int is_cancel(unsigned char byte) {
     return byte == 0x18 || byte == 0x1a;
