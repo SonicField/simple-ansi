@@ -92,6 +92,8 @@ retained when any sequence or UTF-8 character crosses a read boundary.
 The precise behaviour, malformed-input policy, C API, and exit statuses are in
 [`docs/CONTRACT.md`](docs/CONTRACT.md). Extraction provenance and inherited
 baseline evidence are in [`docs/EXTRACTION.md`](docs/EXTRACTION.md).
+The commands, observed local results, and unverified platform claims are in
+[`docs/VERIFICATION.md`](docs/VERIFICATION.md).
 
 ## Limits and security
 
