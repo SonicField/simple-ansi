@@ -16,6 +16,7 @@ BUILD_DIR = build
 UNIT_TEST_TARGET = $(BUILD_DIR)/test_strip_ansi
 PROPERTY_TARGET = $(BUILD_DIR)/test_properties
 IO_TEST_TARGET = $(BUILD_DIR)/test_io
+UTF8_TEST_TARGET = $(BUILD_DIR)/test_utf8
 ANALYZE_TARGET = $(BUILD_DIR)/simple-ansi-analyze
 
 CORE_SOURCES = src/ansi_io.c src/strip_ansi.c
@@ -40,10 +41,14 @@ $(PROPERTY_TARGET): tests/test_properties.c src/strip_ansi.c src/strip_ansi.h sr
 $(IO_TEST_TARGET): tests/test_io.c $(CORE_SOURCES) src/ansi_io.h src/strip_ansi.h src/simple_assert.h | $(BUILD_DIR)
 	$(CC) $(CPPFLAGS) $(ALL_CFLAGS) -o $@ tests/test_io.c $(CORE_SOURCES)
 
-test: $(UNIT_TEST_TARGET) $(PROPERTY_TARGET) $(IO_TEST_TARGET) $(TARGET)
+$(UTF8_TEST_TARGET): tests/test_utf8.c src/strip_ansi.c src/strip_ansi.h src/simple_assert.h | $(BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(ALL_CFLAGS) -o $@ tests/test_utf8.c src/strip_ansi.c
+
+test: $(UNIT_TEST_TARGET) $(PROPERTY_TARGET) $(IO_TEST_TARGET) $(UTF8_TEST_TARGET) $(TARGET)
 	./$(UNIT_TEST_TARGET)
 	./$(PROPERTY_TARGET)
 	./$(IO_TEST_TARGET)
+	./$(UTF8_TEST_TARGET)
 	./tests/test_cli.sh "$(CURDIR)/$(TARGET)"
 
 install: $(TARGET)
@@ -64,5 +69,5 @@ $(ANALYZE_TARGET): $(SOURCES) src/ansi_io.h src/strip_ansi.h src/simple_assert.h
 	$(ANALYZER_CC) $(CPPFLAGS) $(BASE_CFLAGS) $(ANALYZER_CFLAGS) -o $@ $(SOURCES)
 
 clean:
-	rm -f $(TARGET) $(UNIT_TEST_TARGET) $(PROPERTY_TARGET) $(IO_TEST_TARGET) $(ANALYZE_TARGET)
+	rm -f $(TARGET) $(UNIT_TEST_TARGET) $(PROPERTY_TARGET) $(IO_TEST_TARGET) $(UTF8_TEST_TARGET) $(ANALYZE_TARGET)
 	rmdir $(BUILD_DIR) 2>/dev/null || true
