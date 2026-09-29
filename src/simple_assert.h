@@ -7,10 +7,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define ASSERT_MSG(condition, format, ...) do { \
+#define ASSERT_MSG(condition, ...) do { \
     if (!(condition)) { \
-        fprintf(stderr, "ASSERT FAILED %s:%d: " format "\n", \
-                __FILE__, __LINE__, ##__VA_ARGS__); \
+        fprintf(stderr, "ASSERT FAILED %s:%d: ", __FILE__, __LINE__); \
+        fprintf(stderr, __VA_ARGS__); \
+        fputc('\n', stderr); \
         abort(); \
     } \
 } while (0)
