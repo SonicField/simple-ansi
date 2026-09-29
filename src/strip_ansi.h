@@ -10,6 +10,41 @@
 
 #include <stddef.h>
 
+typedef enum {
+    ANSI_FILTER_TEXT = 0,
+    ANSI_FILTER_ESCAPE,
+    ANSI_FILTER_ESCAPE_INTERMEDIATE,
+    ANSI_FILTER_CSI,
+    ANSI_FILTER_OSC,
+    ANSI_FILTER_STRING_ESCAPE
+} ansi_filter_mode;
+
+typedef struct {
+    ansi_filter_mode mode;
+    unsigned char utf8_remaining;
+    unsigned char utf8_first;
+    unsigned char utf8_min;
+    unsigned char utf8_max;
+    int finished;
+} ansi_filter;
+
+enum {
+    ANSI_FILTER_OK = 0,
+    ANSI_FILTER_INVALID_ARGUMENT = 1,
+    ANSI_FILTER_FINISHED = 2
+};
+
+void ansi_filter_init(ansi_filter *filter);
+
+int ansi_filter_process(ansi_filter *filter,
+                        const unsigned char *input,
+                        size_t input_len,
+                        unsigned char *output,
+                        size_t output_capacity,
+                        size_t *output_len);
+
+int ansi_filter_finish(ansi_filter *filter);
+
 /*
  * strip_ansi — Remove ANSI escape sequences in-place.
  *

@@ -32,6 +32,7 @@
 
 #include "strip_ansi.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int tests = 0, fails = 0;
@@ -45,6 +46,30 @@ static int tests = 0, fails = 0;
         printf("   PASS: %s\n", label); \
     } \
 } while(0)
+
+static int filter_with_split(const unsigned char *input, size_t input_len,
+                             size_t split, unsigned char *output,
+                             size_t output_capacity, size_t *output_len) {
+    ansi_filter filter;
+    size_t first_len = 0;
+    size_t second_len = 0;
+
+    ansi_filter_init(&filter);
+    if (ansi_filter_process(&filter, input, split, output, output_capacity,
+                            &first_len) != ANSI_FILTER_OK) {
+        return 0;
+    }
+    if (ansi_filter_process(&filter, input + split, input_len - split,
+                            output + first_len, output_capacity - first_len,
+                            &second_len) != ANSI_FILTER_OK) {
+        return 0;
+    }
+    if (ansi_filter_finish(&filter) != ANSI_FILTER_OK) {
+        return 0;
+    }
+    *output_len = first_len + second_len;
+    return 1;
+}
 
 int main(void) {
     printf("test_sidecar_strip_ansi_unit\n");
@@ -294,15 +319,15 @@ int main(void) {
               (unsigned char)buf[2] == 0x98 && (unsigned char)buf[3] == 0x80);
     }
 
-    /* --- Tests for cursor-right expansion (CSI n C → spaces) --- */
+    /* --- Cursor commands are controls, not inferred screen contents. --- */
 
     /* 27. Small cursor-right: CSI 3 C → 3 spaces.
      * Sequence is ESC [ 3 C = 4 bytes. Gap is large. Should produce 3 spaces. */
     {
         char buf[] = "ab\x1b[3Cde";
         size_t len = strip_ansi(buf);
-        CHECK("cursor right 3 spaces", strcmp(buf, "ab   de") == 0);
-        CHECK("cursor right 3 length", len == 7);
+        CHECK("cursor right stripped", strcmp(buf, "abde") == 0);
+        CHECK("cursor right stripped length", len == 4);
     }
 
     /* 28. Cursor-right with no param: CSI C → 1 space.
@@ -310,8 +335,8 @@ int main(void) {
     {
         char buf[] = "x\x1b[Cy";
         size_t len = strip_ansi(buf);
-        CHECK("cursor right default 1 space", strcmp(buf, "x y") == 0);
-        CHECK("cursor right default length", len == 3);
+        CHECK("cursor right default stripped", strcmp(buf, "xy") == 0);
+        CHECK("cursor right default stripped length", len == 2);
     }
 
     /* 29. Large cursor-right capped to 8: CSI 20 C → 8 spaces max.
@@ -319,12 +344,8 @@ int main(void) {
     {
         char buf[] = "\x1b[20Cend";
         size_t len = strip_ansi(buf);
-        /* Gap between wr (start) and rd (after 'C') is 5 bytes.
-         * 20 spaces requested, capped to gap (5), then capped to 8.
-         * So 5 spaces + "end" */
-        CHECK("cursor right capped to gap", len == 8);
-        CHECK("cursor right capped content ends with 'end'",
-              strcmp(buf + len - 3, "end") == 0);
+        CHECK("large cursor right stripped", len == 3);
+        CHECK("large cursor right leaves following text", strcmp(buf, "end") == 0);
     }
 
     /* 30. Cursor-right invariant: wr never overtakes rd.
@@ -335,11 +356,34 @@ int main(void) {
         size_t len = strip_ansi(buf);
         /* ESC [ 8 C = 4 bytes, then 'x'. Gap at start is 4.
          * 8 spaces requested, capped to 4 (gap). Then 'x' copied. */
-        CHECK("cursor right 8 at start: no overflow", len == 5);
-        CHECK("cursor right 8 at start: ends with x",
-              buf[len - 1] == 'x');
-        /* Verify no assertion fired (test reaching here = pass) */
-        CHECK("cursor right 8 at start: invariant held", 1);
+        CHECK("cursor right does not invent bytes", len == 1);
+        CHECK("cursor right leaves x", strcmp(buf, "x") == 0);
+        CHECK("cursor right output no longer than input", len <= 5);
+    }
+
+    /* Every split point must match one-shot filtering. */
+    {
+        static const unsigned char input[] =
+            "start\x1b[38;5;196mred\x1b[0m/"
+            "\x1b]8;;https://example.test\x1b\\link\x1b]8;;\x07/"
+            "\x1b(0end\xF0\x9F\x98\x80";
+        unsigned char expected[sizeof(input)];
+        unsigned char actual[sizeof(input)];
+        size_t expected_len = 0;
+
+        CHECK("one-shot streaming filter succeeds",
+              filter_with_split(input, sizeof(input) - 1, sizeof(input) - 1,
+                                expected, sizeof(expected), &expected_len));
+        for (size_t split = 0; split <= sizeof(input) - 1; split++) {
+            size_t actual_len = 0;
+            int ok = filter_with_split(input, sizeof(input) - 1, split,
+                                       actual, sizeof(actual), &actual_len);
+            char label[96];
+            snprintf(label, sizeof(label),
+                     "stream split %zu matches one-shot", split);
+            CHECK(label, ok && actual_len == expected_len &&
+                         memcmp(actual, expected, expected_len) == 0);
+        }
     }
 
     printf("%d/%d passed\n", tests - fails, tests);
