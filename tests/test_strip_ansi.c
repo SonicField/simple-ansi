@@ -451,6 +451,77 @@ int main(void) {
         }
     }
 
+    /* Truncated controls are discarded at EOF rather than leaked. */
+    {
+        static const unsigned char csi[] = "visible\x1b[31";
+        static const unsigned char osc[] = "visible\x1b]secret";
+        static const unsigned char esc[] = "visible\x1b";
+        unsigned char output[32];
+        size_t output_len = 0;
+        CHECK("truncated CSI discarded",
+              filter_with_split(csi, sizeof(csi) - 1, 8, output,
+                                sizeof(output), &output_len) &&
+              output_len == 7 && memcmp(output, "visible", 7) == 0);
+        CHECK("truncated OSC discarded",
+              filter_with_split(osc, sizeof(osc) - 1, 9, output,
+                                sizeof(output), &output_len) &&
+              output_len == 7 && memcmp(output, "visible", 7) == 0);
+        CHECK("truncated ESC discarded",
+              filter_with_split(esc, sizeof(esc) - 1, 7, output,
+                                sizeof(output), &output_len) &&
+              output_len == 7 && memcmp(output, "visible", 7) == 0);
+    }
+
+    /* The length-aware API handles embedded NUL and malformed UTF-8 bytes. */
+    {
+        static const unsigned char input[] = {
+            'a', 0x00, 0xc2, 0x80, 0xe0, 0x80, 0x85, 0xff, 'b'
+        };
+        static const unsigned char expected[] = {
+            'a', 0xc2, 0x80, 0xe0, 0xff, 'b'
+        };
+        unsigned char output[sizeof(input)];
+        size_t output_len = 0;
+        CHECK("binary and malformed UTF-8 policy",
+              filter_with_split(input, sizeof(input), 5, output,
+                                sizeof(output), &output_len) &&
+              output_len == sizeof(expected) &&
+              memcmp(output, expected, sizeof(expected)) == 0);
+    }
+
+    /* API misuse is reported and finalisation is a one-way transition. */
+    {
+        ansi_filter filter;
+        unsigned char byte = 'x';
+        size_t output_len = 99;
+        ansi_filter_init(&filter);
+        CHECK("NULL input rejected for non-empty chunk",
+              ansi_filter_process(&filter, NULL, 1, &byte, 1,
+                                  &output_len) == ANSI_FILTER_INVALID_ARGUMENT);
+        CHECK("undersized output rejected",
+              ansi_filter_process(&filter, &byte, 1, &byte, 0,
+                                  &output_len) == ANSI_FILTER_INVALID_ARGUMENT);
+        CHECK("empty NULL buffers accepted",
+              ansi_filter_process(&filter, NULL, 0, NULL, 0,
+                                  &output_len) == ANSI_FILTER_OK &&
+              output_len == 0);
+        CHECK("first finish succeeds",
+              ansi_filter_finish(&filter) == ANSI_FILTER_OK);
+        CHECK("process after finish rejected",
+              ansi_filter_process(&filter, &byte, 1, &byte, 1,
+                                  &output_len) == ANSI_FILTER_FINISHED);
+        CHECK("second finish rejected",
+              ansi_filter_finish(&filter) == ANSI_FILTER_FINISHED);
+        CHECK("NULL filter rejected",
+              ansi_filter_process(NULL, &byte, 1, &byte, 1,
+                                  &output_len) == ANSI_FILTER_INVALID_ARGUMENT);
+        CHECK("NULL output length rejected",
+              ansi_filter_process(&filter, &byte, 1, &byte, 1,
+                                  NULL) == ANSI_FILTER_INVALID_ARGUMENT);
+        CHECK("NULL finish rejected",
+              ansi_filter_finish(NULL) == ANSI_FILTER_INVALID_ARGUMENT);
+    }
+
     printf("%d/%d passed\n", tests - fails, tests);
     return fails;
 }
