@@ -1,15 +1,13 @@
-/*
- * strip_ansi.h — Strip ANSI/terminal escape sequences from text.
- *
- * Used by the @mention? query feature to clean session output
- * before posting to chat.
- */
-
 #ifndef STRIP_ANSI_H
 #define STRIP_ANSI_H
 
 #include <stddef.h>
 
+/*
+ * Public streaming state. Initialise with ansi_filter_init(), pass every input
+ * chunk to ansi_filter_process(), then call ansi_filter_finish() exactly once.
+ * Callers should not inspect or modify these fields.
+ */
 typedef enum {
     ANSI_FILTER_TEXT = 0,
     ANSI_FILTER_ESCAPE,
@@ -35,8 +33,16 @@ enum {
     ANSI_FILTER_FINISHED = 2
 };
 
+/* A NULL pointer is ignored, allowing defensive cleanup-style initialisation. */
 void ansi_filter_init(ansi_filter *filter);
 
+/*
+ * Filter one chunk.
+ *
+ * output_capacity must be at least input_len; the filter never expands input.
+ * input and output may point to the same buffer. NULL buffers are accepted only
+ * for an empty chunk. On success, output_len receives the bytes produced.
+ */
 int ansi_filter_process(ansi_filter *filter,
                         const unsigned char *input,
                         size_t input_len,
@@ -44,27 +50,17 @@ int ansi_filter_process(ansi_filter *filter,
                         size_t output_capacity,
                         size_t *output_len);
 
+/*
+ * Discard any incomplete terminal sequence and close the stream. Processing or
+ * finishing this state again returns ANSI_FILTER_FINISHED.
+ */
 int ansi_filter_finish(ansi_filter *filter);
 
 /*
- * strip_ansi — Remove ANSI escape sequences in-place.
- *
- * Handles:
- *   - CSI sequences: ESC [ ... final_byte (0x40-0x7E)
- *   - OSC sequences: ESC ] ... ST (ESC \ or BEL)
- *   - Simple escapes: ESC followed by single char in 0x20-0x7E
- *   - Bare control characters: C0 (0x00-0x1F except \n, \t) and DEL (0x7F)
- *   - C1 control codes: standalone 0x80-0x9F (8-bit control characters)
- *
- * UTF-8 aware: multi-byte sequences (leading byte 0xC2-0xF4 followed
- * by continuation bytes 0x80-0xBF) are copied as a unit. Continuation
- * bytes in the C1 range are NOT stripped when part of a valid sequence.
- *
- * The string is modified in-place. Returns the new length.
- *
- * Postcondition enforced by assertion: output length <= input length.
- * Invariant enforced by assertion: write pointer never overtakes read pointer.
+ * Compatibility helper for NUL-terminated strings. It filters in place,
+ * appends a new NUL terminator, and returns the output length. Use the streaming
+ * API for arbitrary bytes, including embedded NUL.
  */
 size_t strip_ansi(char *text);
 
-#endif /* STRIP_ANSI_H */
+#endif
