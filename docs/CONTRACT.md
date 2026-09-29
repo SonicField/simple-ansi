@@ -50,6 +50,8 @@ It also removes:
 Valid RFC 3629 UTF-8 sequences pass byte-for-byte, including continuation
 bytes in the C1 range. All other bytes outside the control ranges pass
 byte-for-byte. The filter does not otherwise validate or transcode text.
+UTF-8 is also recognised inside discarded control-string payloads. A valid
+continuation byte equal to 8-bit ST (`0x9c`) is payload, not a terminator.
 
 CAN (`0x18`) and SUB (`0x1a`) cancel an in-progress CSI or control string.
 They are themselves removed. Subsequent input is handled normally.
@@ -66,6 +68,10 @@ control sequence:
   formal parameter/intermediate ranges.
 - An ESC inside a control string only terminates it when followed by `\\`;
   otherwise it and the following content remain part of the string.
+- If a UTF-8 leading byte inside a control string is not followed by a valid
+  continuation byte, the candidate sequence is abandoned. That next byte is
+  reconsidered as control-string syntax, so an invalid continuation `0x9c`
+  terminates the string as ST.
 
 These rules prevent unterminated control payloads from leaking, at the cost of
 discarding trailing text after a malformed introducer.

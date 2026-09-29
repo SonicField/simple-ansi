@@ -522,6 +522,76 @@ int main(void) {
               ansi_filter_finish(NULL) == ANSI_FILTER_INVALID_ARGUMENT);
     }
 
+    /* A valid UTF-8 continuation byte equal to 8-bit ST (0x9c) remains part
+     * of a string payload and must not expose the bytes which follow it. */
+    {
+        static const unsigned char osc7[] =
+            "a\x1b]prefix\xc5\x9cLEAK\x07" "after";
+        static const unsigned char dcs7[] =
+            "a\x1bPprefix\xc5\x9cLEAK\x1b\\after";
+        static const unsigned char sos7[] =
+            "a\x1bXprefix\xc5\x9cLEAK\x1b\\after";
+        static const unsigned char pm7[] =
+            "a\x1b^prefix\xc5\x9cLEAK\x1b\\after";
+        static const unsigned char apc7[] =
+            "a\x1b_prefix\xc5\x9cLEAK\x1b\\after";
+        static const unsigned char osc8[] =
+            "a\x9d" "prefix\xc5\x9cLEAK\x07" "after";
+        static const unsigned char dcs8[] =
+            "a\x90" "prefix\xc5\x9cLEAK\x9c" "after";
+        static const unsigned char sos8[] =
+            "a\x98" "prefix\xc5\x9cLEAK\x9c" "after";
+        static const unsigned char pm8[] =
+            "a\x9e" "prefix\xc5\x9cLEAK\x9c" "after";
+        static const unsigned char apc8[] =
+            "a\x9f" "prefix\xc5\x9cLEAK\x9c" "after";
+        static const struct {
+            const unsigned char *input;
+            size_t input_len;
+            const char *name;
+        } cases[] = {
+            {osc7, sizeof(osc7) - 1, "7-bit OSC"},
+            {dcs7, sizeof(dcs7) - 1, "7-bit DCS"},
+            {sos7, sizeof(sos7) - 1, "7-bit SOS"},
+            {pm7, sizeof(pm7) - 1, "7-bit PM"},
+            {apc7, sizeof(apc7) - 1, "7-bit APC"},
+            {osc8, sizeof(osc8) - 1, "8-bit OSC"},
+            {dcs8, sizeof(dcs8) - 1, "8-bit DCS"},
+            {sos8, sizeof(sos8) - 1, "8-bit SOS"},
+            {pm8, sizeof(pm8) - 1, "8-bit PM"},
+            {apc8, sizeof(apc8) - 1, "8-bit APC"}
+        };
+        unsigned char output[64];
+
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            for (size_t split = 0; split <= cases[i].input_len; split++) {
+                size_t output_len = 0;
+                int ok = filter_with_split(cases[i].input,
+                                           cases[i].input_len, split,
+                                           output, sizeof(output),
+                                           &output_len);
+                char label[128];
+                snprintf(label, sizeof(label), "%s UTF-8/ST split %zu",
+                         cases[i].name, split);
+                CHECK(label, ok && output_len == 6 &&
+                             memcmp(output, "aafter", 6) == 0);
+            }
+        }
+    }
+
+    /* If a candidate UTF-8 sequence is malformed, the invalid byte is
+     * reconsidered as terminal syntax. Here 0x9c therefore remains ST. */
+    {
+        static const unsigned char input[] =
+            "a\x1b]prefix\xe0\x9c" "after";
+        unsigned char output[32];
+        size_t output_len = 0;
+        CHECK("malformed UTF-8 does not hide ST",
+              filter_with_split(input, sizeof(input) - 1, 10,
+                                output, sizeof(output), &output_len) &&
+              output_len == 6 && memcmp(output, "aafter", 6) == 0);
+    }
+
     printf("%d/%d passed\n", tests - fails, tests);
     return fails;
 }

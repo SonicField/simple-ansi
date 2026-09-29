@@ -17,6 +17,8 @@ static int is_csi_final(unsigned char byte) {
 static void begin_string(ansi_filter *filter, int allows_bel) {
     filter->mode = ANSI_FILTER_STRING;
     filter->string_allows_bel = (unsigned char)(allows_bel != 0);
+    filter->utf8_remaining = 0;
+    filter->utf8_first = 0;
 }
 
 static void begin_utf8(ansi_filter *filter, unsigned char byte) {
@@ -86,11 +88,15 @@ int ansi_filter_process(ansi_filter *filter,
     while (input_at < input_len) {
         unsigned char byte = input[input_at];
 
-        if (filter->mode == ANSI_FILTER_TEXT && filter->utf8_remaining != 0) {
+        if ((filter->mode == ANSI_FILTER_TEXT ||
+             filter->mode == ANSI_FILTER_STRING) &&
+            filter->utf8_remaining != 0) {
             unsigned char minimum = filter->utf8_first ? filter->utf8_min : 0x80;
             unsigned char maximum = filter->utf8_first ? filter->utf8_max : 0xbf;
             if (byte >= minimum && byte <= maximum) {
-                output[output_at++] = byte;
+                if (filter->mode == ANSI_FILTER_TEXT) {
+                    output[output_at++] = byte;
+                }
                 input_at++;
                 filter->utf8_remaining--;
                 filter->utf8_first = 0;
@@ -177,7 +183,9 @@ int ansi_filter_process(ansi_filter *filter,
             break;
 
         case ANSI_FILTER_STRING:
-            if ((byte == 0x07 && filter->string_allows_bel) ||
+            if (byte >= 0xc2 && byte <= 0xf4) {
+                begin_utf8(filter, byte);
+            } else if ((byte == 0x07 && filter->string_allows_bel) ||
                 byte == 0x9c || is_cancel(byte)) {
                 filter->mode = ANSI_FILTER_TEXT;
             } else if (byte == 0x1b) {
@@ -191,10 +199,13 @@ int ansi_filter_process(ansi_filter *filter,
                 (byte == 0x07 && filter->string_allows_bel) ||
                 byte == 0x9c || is_cancel(byte)) {
                 filter->mode = ANSI_FILTER_TEXT;
-            } else if (byte != 0x1b) {
+                input_at++;
+            } else if (byte == 0x1b) {
+                input_at++;
+            } else {
                 filter->mode = ANSI_FILTER_STRING;
+                /* Reconsider payload bytes so UTF-8 state is established. */
             }
-            input_at++;
             break;
         }
     }

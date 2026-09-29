@@ -88,4 +88,18 @@ printf 'Z' >>"$tmp_dir/boundary.expected"
 cmp "$tmp_dir/boundary.expected" "$tmp_dir/boundary.out" ||
     fail "sequence crossing the I/O buffer boundary was corrupted"
 
-echo "10/10 CLI scenarios passed"
+printf '\033]0;prefix\305\234LEAK\007after\n' |
+    "$binary" >"$tmp_dir/utf8-osc.out" ||
+    fail "UTF-8 OSC regression returned failure"
+printf 'after\n' >"$tmp_dir/expected"
+cmp "$tmp_dir/expected" "$tmp_dir/utf8-osc.out" ||
+    fail "UTF-8 continuation byte terminated OSC"
+
+printf 'a\033Pprefix\305\234LEAK\033\\after\n' |
+    "$binary" >"$tmp_dir/utf8-dcs.out" ||
+    fail "UTF-8 DCS regression returned failure"
+printf 'aafter\n' >"$tmp_dir/expected"
+cmp "$tmp_dir/expected" "$tmp_dir/utf8-dcs.out" ||
+    fail "UTF-8 continuation byte terminated DCS"
+
+echo "12/12 CLI scenarios passed"
