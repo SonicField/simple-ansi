@@ -70,4 +70,22 @@ printf 'dash file' >"$tmp_dir/expected"
 cmp "$tmp_dir/expected" "$tmp_dir/dash.out" ||
     fail "dash-prefixed filename produced wrong bytes"
 
-echo "8/8 CLI scenarios passed"
+mkdir "$tmp_dir/input-directory"
+set +e
+"$binary" "$tmp_dir/input-directory" >"$tmp_dir/read.out" 2>"$tmp_dir/read.err"
+status=$?
+set -e
+test "$status" -eq 1 || fail "read failure did not return 1"
+test ! -s "$tmp_dir/read.out" || fail "read failure contaminated stdout"
+grep -q 'read failed' "$tmp_dir/read.err" || fail "read failure lacks diagnostic"
+
+dd if=/dev/zero bs=16383 count=1 2>/dev/null | tr '\000' a >"$tmp_dir/boundary.in"
+printf '\033[31mZ\033[0m' >>"$tmp_dir/boundary.in"
+dd if=/dev/zero bs=16383 count=1 2>/dev/null | tr '\000' a >"$tmp_dir/boundary.expected"
+printf 'Z' >>"$tmp_dir/boundary.expected"
+"$binary" "$tmp_dir/boundary.in" >"$tmp_dir/boundary.out" ||
+    fail "buffer-boundary filtering returned failure"
+cmp "$tmp_dir/boundary.expected" "$tmp_dir/boundary.out" ||
+    fail "sequence crossing the I/O buffer boundary was corrupted"
+
+echo "10/10 CLI scenarios passed"
