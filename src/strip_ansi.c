@@ -14,6 +14,11 @@ static int is_csi_final(unsigned char byte) {
     return byte >= 0x40 && byte <= 0x7e;
 }
 
+static void begin_string(ansi_filter *filter, int allows_bel) {
+    filter->mode = ANSI_FILTER_STRING;
+    filter->string_allows_bel = (unsigned char)(allows_bel != 0);
+}
+
 static void begin_utf8(ansi_filter *filter, unsigned char byte) {
     if (byte <= 0xdf) {
         filter->utf8_remaining = 1;
@@ -100,6 +105,13 @@ int ansi_filter_process(ansi_filter *filter,
         case ANSI_FILTER_TEXT:
             if (byte == 0x1b) {
                 filter->mode = ANSI_FILTER_ESCAPE;
+            } else if (byte == 0x9b) {
+                filter->mode = ANSI_FILTER_CSI;
+            } else if (byte == 0x9d) {
+                begin_string(filter, 1);
+            } else if (byte == 0x90 || byte == 0x98 ||
+                       byte == 0x9e || byte == 0x9f) {
+                begin_string(filter, 0);
             } else if (byte == '\t' || byte == '\n') {
                 output[output_at++] = byte;
             } else if (byte < 0x20 || (byte >= 0x7f && byte <= 0x9f)) {
@@ -118,7 +130,11 @@ int ansi_filter_process(ansi_filter *filter,
                 filter->mode = ANSI_FILTER_CSI;
                 input_at++;
             } else if (byte == ']') {
-                filter->mode = ANSI_FILTER_OSC;
+                begin_string(filter, 1);
+                input_at++;
+            } else if (byte == 'P' || byte == 'X' ||
+                       byte == '^' || byte == '_') {
+                begin_string(filter, 0);
                 input_at++;
             } else if (byte >= 0x20 && byte <= 0x2f) {
                 filter->mode = ANSI_FILTER_ESCAPE_INTERMEDIATE;
@@ -160,8 +176,9 @@ int ansi_filter_process(ansi_filter *filter,
             input_at++;
             break;
 
-        case ANSI_FILTER_OSC:
-            if (byte == 0x07 || byte == 0x9c || is_cancel(byte)) {
+        case ANSI_FILTER_STRING:
+            if ((byte == 0x07 && filter->string_allows_bel) ||
+                byte == 0x9c || is_cancel(byte)) {
                 filter->mode = ANSI_FILTER_TEXT;
             } else if (byte == 0x1b) {
                 filter->mode = ANSI_FILTER_STRING_ESCAPE;
@@ -170,10 +187,12 @@ int ansi_filter_process(ansi_filter *filter,
             break;
 
         case ANSI_FILTER_STRING_ESCAPE:
-            if (byte == '\\' || byte == 0x07 || byte == 0x9c || is_cancel(byte)) {
+            if (byte == '\\' ||
+                (byte == 0x07 && filter->string_allows_bel) ||
+                byte == 0x9c || is_cancel(byte)) {
                 filter->mode = ANSI_FILTER_TEXT;
             } else if (byte != 0x1b) {
-                filter->mode = ANSI_FILTER_OSC;
+                filter->mode = ANSI_FILTER_STRING;
             }
             input_at++;
             break;

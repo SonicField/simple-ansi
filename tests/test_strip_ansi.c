@@ -194,12 +194,10 @@ int main(void) {
         CHECK("DEL+escapes length", len == 4);
     }
 
-    /* 15. C1 control codes (0x80-0x9F) are stripped.
-     * These are 8-bit control characters that tmux applications may emit.
-     * 0x9B is 8-bit CSI, 0x9D is 8-bit OSC — both should be stripped. */
+    /* 15. Standalone C1 control codes are stripped. Sequence introducers
+     * are tested separately with their complete payloads below. */
     {
-        /* 0x90 (DCS), 0x9B (CSI), 0x9D (OSC) — all C1 controls */
-        char buf[] = "abc\x90\x9B\x9D" "def";
+        char buf[] = "abc\x80\x85\x91" "def";
         size_t len = strip_ansi(buf);
         CHECK("C1 controls stripped", strcmp(buf, "abcdef") == 0);
         CHECK("C1 controls length", len == 6);
@@ -284,9 +282,9 @@ int main(void) {
     }
 
     /* 24. Mixed: valid UTF-8 multi-byte + standalone C1 controls.
-     * U+0100 (0xC4 0x80) should be preserved, standalone 0x90 stripped. */
+     * U+0100 (0xC4 0x80) should be preserved, standalone 0x85 stripped. */
     {
-        char buf[] = "\xC4\x80\x90\xC4\x80";
+        char buf[] = "\xC4\x80\x85\xC4\x80";
         size_t len = strip_ansi(buf);
         CHECK("B16: mixed UTF-8 and C1",
               len == 4 && (unsigned char)buf[0] == 0xC4 &&
@@ -383,6 +381,73 @@ int main(void) {
                      "stream split %zu matches one-shot", split);
             CHECK(label, ok && actual_len == expected_len &&
                          memcmp(actual, expected, expected_len) == 0);
+        }
+    }
+
+    /* Control-string families must consume their payloads, including 8-bit
+     * forms whose introducer previously leaked the following text. */
+    {
+        static const struct {
+            const unsigned char *input;
+            size_t input_len;
+            const char *label;
+        } cases[] = {
+            {(const unsigned char *)"a\x1bPprivate\x1b\\b", 13, "7-bit DCS"},
+            {(const unsigned char *)"a\x1bXprivate\x1b\\b", 13, "7-bit SOS"},
+            {(const unsigned char *)"a\x1b^private\x1b\\b", 13, "7-bit PM"},
+            {(const unsigned char *)"a\x1b_private\x1b\\b", 13, "7-bit APC"},
+            {(const unsigned char *)"a\x9b" "31mb", 6, "8-bit CSI"},
+            {(const unsigned char *)"a\x9dtitle\x9c" "b", 9, "8-bit OSC"},
+            {(const unsigned char *)"a\x90private\x9c" "b", 11, "8-bit DCS"},
+            {(const unsigned char *)"a\x98private\x9c" "b", 11, "8-bit SOS"},
+            {(const unsigned char *)"a\x9eprivate\x9c" "b", 11, "8-bit PM"},
+            {(const unsigned char *)"a\x9fprivate\x9c" "b", 11, "8-bit APC"}
+        };
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            unsigned char output[32];
+            size_t output_len = 0;
+            int ok = filter_with_split(cases[i].input, cases[i].input_len,
+                                       cases[i].input_len / 2, output,
+                                       sizeof(output), &output_len);
+            CHECK(cases[i].label,
+                  ok && output_len == 2 && memcmp(output, "ab", 2) == 0);
+        }
+    }
+
+    /* CAN and SUB terminate a control string without leaking its payload. */
+    {
+        static const unsigned char can_input[] = "a\x1bPsecret\x18visible";
+        static const unsigned char sub_input[] = "a\x1b]secret\x1avisible";
+        unsigned char output[32];
+        size_t output_len = 0;
+        CHECK("CAN cancels DCS",
+              filter_with_split(can_input, sizeof(can_input) - 1, 5,
+                                output, sizeof(output), &output_len) &&
+              output_len == 8 && memcmp(output, "avisible", 8) == 0);
+        CHECK("SUB cancels OSC",
+              filter_with_split(sub_input, sizeof(sub_input) - 1, 4,
+                                output, sizeof(output), &output_len) &&
+              output_len == 8 && memcmp(output, "avisible", 8) == 0);
+    }
+
+    /* A combined stream containing every family must be chunk-independent. */
+    {
+        static const unsigned char input[] =
+            "A\x1b[31mB\x1b]title\x07" "C\x1bPdata\x1b\\D"
+            "\x1bXdata\x1b\\E\x1b^data\x1b\\F\x1b_data\x1b\\G"
+            "\x9b" "2mH\x9d" "data\x9c" "I\x90" "data\x9c" "J"
+            "\x98" "data\x9c" "K\x9e" "data\x9c" "L\x9f" "data\x9c" "M";
+        static const unsigned char expected[] = "ABCDEFGHIJKLM";
+        unsigned char output[sizeof(input)];
+        for (size_t split = 0; split <= sizeof(input) - 1; split++) {
+            size_t output_len = 0;
+            int ok = filter_with_split(input, sizeof(input) - 1, split,
+                                       output, sizeof(output), &output_len);
+            char label[96];
+            snprintf(label, sizeof(label),
+                     "all families split %zu", split);
+            CHECK(label, ok && output_len == sizeof(expected) - 1 &&
+                         memcmp(output, expected, sizeof(expected) - 1) == 0);
         }
     }
 

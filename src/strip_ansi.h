@@ -15,7 +15,7 @@ typedef enum {
     ANSI_FILTER_ESCAPE,
     ANSI_FILTER_ESCAPE_INTERMEDIATE,
     ANSI_FILTER_CSI,
-    ANSI_FILTER_OSC,
+    ANSI_FILTER_STRING,
     ANSI_FILTER_STRING_ESCAPE
 } ansi_filter_mode;
 
@@ -25,6 +25,7 @@ typedef struct {
     unsigned char utf8_first;
     unsigned char utf8_min;
     unsigned char utf8_max;
+    unsigned char string_allows_bel;
     int finished;
 } ansi_filter;
 
