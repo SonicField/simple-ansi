@@ -2,6 +2,7 @@
 set -eu
 
 binary=$1
+PIPE_HELPER=${PIPE_HELPER:-./build/test_broken_pipe}
 tmp_dir=${TMPDIR:-/tmp}/simple-ansi-test-$$
 mkdir -p "$tmp_dir"
 trap 'rm -rf "$tmp_dir"' EXIT HUP INT TERM
@@ -36,6 +37,38 @@ test ! -s "$tmp_dir/help.err" || fail "--help wrote stderr"
     fail "--version returned failure"
 grep -q '^simple-ansi ' "$tmp_dir/version" || fail "--version lacks program name"
 test ! -s "$tmp_dir/version.err" || fail "--version wrote stderr"
+
+for option in --help --version; do
+    set +e
+    "$binary" "$option" 1>&- 2>"$tmp_dir/closed.err"
+    status=$?
+    set -e
+    test "$status" -eq 1 ||
+        fail "$option with closed stdout returned $status instead of 1"
+    grep -q 'write failed' "$tmp_dir/closed.err" ||
+        fail "$option with closed stdout lacks diagnostic"
+
+    set +e
+    "$PIPE_HELPER" "$binary" "$option" 2>"$tmp_dir/pipe.err"
+    status=$?
+    set -e
+    test "$status" -eq 1 ||
+        fail "$option with broken pipe returned $status instead of 1"
+done
+
+set +e
+"$binary" "$tmp_dir/input" "$tmp_dir/input" \
+    >"$tmp_dir/many.out" 2>"$tmp_dir/many.err"
+status=$?
+set -e
+test "$status" -eq 2 || fail "multiple input files did not return 2"
+
+set +e
+"$binary" --help "$tmp_dir/input" \
+    >"$tmp_dir/combined.out" 2>"$tmp_dir/combined.err"
+status=$?
+set -e
+test "$status" -eq 2 || fail "combined option and filename did not return 2"
 
 set +e
 "$binary" --unknown >"$tmp_dir/bad.out" 2>"$tmp_dir/bad.err"
@@ -102,4 +135,4 @@ printf 'aafter\n' >"$tmp_dir/expected"
 cmp "$tmp_dir/expected" "$tmp_dir/utf8-dcs.out" ||
     fail "UTF-8 continuation byte terminated DCS"
 
-echo "12/12 CLI scenarios passed"
+echo "18/18 CLI scenarios passed"

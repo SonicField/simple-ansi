@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Report output failures from `--help` and `--version`, including broken pipes.
+
 ## 0.1.0 — 2026-09-29
 
 - Extract the NBS ANSI-stripping baseline with provenance.

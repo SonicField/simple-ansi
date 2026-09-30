@@ -18,6 +18,7 @@ PROPERTY_TARGET = $(BUILD_DIR)/test_properties
 IO_TEST_TARGET = $(BUILD_DIR)/test_io
 UTF8_TEST_TARGET = $(BUILD_DIR)/test_utf8
 ANALYZE_TARGET = $(BUILD_DIR)/simple-ansi-analyze
+PIPE_HELPER = $(BUILD_DIR)/test_broken_pipe
 
 CORE_SOURCES = src/ansi_io.c src/strip_ansi.c
 SOURCES = src/main.c $(CORE_SOURCES)
@@ -44,12 +45,15 @@ $(IO_TEST_TARGET): tests/test_io.c $(CORE_SOURCES) src/ansi_io.h src/strip_ansi.
 $(UTF8_TEST_TARGET): tests/test_utf8.c src/strip_ansi.c src/strip_ansi.h src/simple_assert.h | $(BUILD_DIR)
 	$(CC) $(CPPFLAGS) $(ALL_CFLAGS) -o $@ tests/test_utf8.c src/strip_ansi.c
 
-test: $(UNIT_TEST_TARGET) $(PROPERTY_TARGET) $(IO_TEST_TARGET) $(UTF8_TEST_TARGET) $(TARGET)
+test: $(UNIT_TEST_TARGET) $(PROPERTY_TARGET) $(IO_TEST_TARGET) $(UTF8_TEST_TARGET) $(PIPE_HELPER) $(TARGET)
 	./$(UNIT_TEST_TARGET)
 	./$(PROPERTY_TARGET)
 	./$(IO_TEST_TARGET)
 	./$(UTF8_TEST_TARGET)
-	./tests/test_cli.sh "$(CURDIR)/$(TARGET)"
+	PIPE_HELPER="$(CURDIR)/$(PIPE_HELPER)" ./tests/test_cli.sh "$(CURDIR)/$(TARGET)"
+
+$(PIPE_HELPER): tests/test_broken_pipe.c | $(BUILD_DIR)
+	$(CC) $(ALL_CFLAGS) -o $@ $<
 
 install: $(TARGET)
 	install -d "$(DESTDIR)$(BINDIR)"
@@ -69,5 +73,5 @@ $(ANALYZE_TARGET): $(SOURCES) src/ansi_io.h src/strip_ansi.h src/simple_assert.h
 	$(ANALYZER_CC) $(CPPFLAGS) $(BASE_CFLAGS) $(ANALYZER_CFLAGS) -o $@ $(SOURCES)
 
 clean:
-	rm -f $(TARGET) $(UNIT_TEST_TARGET) $(PROPERTY_TARGET) $(IO_TEST_TARGET) $(UTF8_TEST_TARGET) $(ANALYZE_TARGET)
+	rm -f $(TARGET) $(UNIT_TEST_TARGET) $(PROPERTY_TARGET) $(IO_TEST_TARGET) $(UTF8_TEST_TARGET) $(ANALYZE_TARGET) $(PIPE_HELPER)
 	rmdir $(BUILD_DIR) 2>/dev/null || true

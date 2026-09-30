@@ -9,8 +9,16 @@
 
 #define SIMPLE_ANSI_VERSION "0.1.0"
 
-static void usage(FILE *stream) {
-    fprintf(stream, "Usage: simple-ansi [--help] [--version] [FILE]\n");
+static int usage(FILE *stream) {
+    return fprintf(stream, "Usage: simple-ansi [--help] [--version] [FILE]\n");
+}
+
+static int finish_standard_output(void) {
+    if (fflush(stdout) == 0) {
+        return 0;
+    }
+    fprintf(stderr, "simple-ansi: write failed: %s\n", strerror(errno));
+    return 1;
 }
 
 static ssize_t read_fd(void *context, unsigned char *buffer, size_t capacity) {
@@ -33,13 +41,25 @@ int main(int argc, char **argv) {
     int result;
     int operation_errno;
 
+    if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
+        fprintf(stderr, "simple-ansi: cannot configure output handling: %s\n",
+                strerror(errno));
+        return 1;
+    }
+
     if (argc == 2 && strcmp(argv[1], "--help") == 0) {
-        usage(stdout);
-        return 0;
+        if (usage(stdout) < 0) {
+            fprintf(stderr, "simple-ansi: write failed: %s\n", strerror(errno));
+            return 1;
+        }
+        return finish_standard_output();
     }
     if (argc == 2 && strcmp(argv[1], "--version") == 0) {
-        printf("simple-ansi %s\n", SIMPLE_ANSI_VERSION);
-        return 0;
+        if (printf("simple-ansi %s\n", SIMPLE_ANSI_VERSION) < 0) {
+            fprintf(stderr, "simple-ansi: write failed: %s\n", strerror(errno));
+            return 1;
+        }
+        return finish_standard_output();
     }
     if (argc == 2 && strcmp(argv[1], "--") == 0) {
         /* Explicit end of options with no filename still means stdin. */
@@ -51,12 +71,6 @@ int main(int argc, char **argv) {
         fprintf(stderr, "simple-ansi: invalid arguments\n");
         usage(stderr);
         return 2;
-    }
-
-    if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
-        fprintf(stderr, "simple-ansi: cannot configure output handling: %s\n",
-                strerror(errno));
-        return 1;
     }
 
     if (path != NULL) {

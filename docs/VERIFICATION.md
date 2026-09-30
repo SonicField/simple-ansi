@@ -1,6 +1,6 @@
 # Verification report
 
-Recorded: 2026-09-29
+Recorded: 2026-09-30
 
 ## Goal
 
@@ -42,7 +42,8 @@ The inherited baseline passed 59/59 assertions. See
 
 The normal suite contains 470 named parser assertions, 1,000 deterministic
 generated streams, one 1 MiB stream, exhaustive valid Unicode scalar coverage,
-8 injected I/O assertions, and 12 end-to-end CLI scenarios.
+8 injected I/O assertions, and 18 end-to-end CLI scenarios. The CLI scenarios
+include closed-descriptor and broken-pipe checks for help and version output.
 
 ## CI definition
 

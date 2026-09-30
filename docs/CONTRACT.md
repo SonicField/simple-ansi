@@ -83,7 +83,7 @@ input into chunks. The filter keeps only parser state between chunks; it does
 not impose a line-size limit. Output never contains bytes invented by the
 filter and is never longer than input.
 
-The C API reports invalid arguments and a previously failed state. The CLI
+The C API reports invalid arguments and a previously finished state. The CLI
 retries interrupted reads and writes, completes short writes, and reports
 permanent I/O failures with non-zero status.
 
